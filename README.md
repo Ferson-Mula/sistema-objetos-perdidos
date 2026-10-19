@@ -1,3 +1,4 @@
+
 # Sistema Universitário de Gestão e Correspondência de Objectos Perdidos e Encontrados (UJC)
 
 Grupo 4 — Paradigmas de Programação, 3.º Ano, Engenharia em Tecnologias e Sistemas de Informação.
@@ -73,3 +74,4 @@ de cada regra está em `docs/fase2-pontos-de-estrangulamento.md`.
 - `docs/bpmn/` — diagramas BPMN AS-IS e TO-BE.
 - `docs/referencias/` — template TO-BE e notas da discussão.
 - `docs/fase2-pontos-de-estrangulamento.md` — o que a fase 1 ainda não resolve.
+
