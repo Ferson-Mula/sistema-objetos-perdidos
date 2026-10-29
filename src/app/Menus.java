@@ -1,570 +1,317 @@
 package app;
 
-import java.util.ArrayList;
+import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Scanner;
 
+import funcional.Consultas;
 import model.Categoria;
-import model.Correspondencia;
-import model.Destino;
 import model.EstadoObjecto;
-import model.EstadoProcura;
 import model.EstadoReclamacao;
-import model.FuncionarioSector;
-import model.Gestor;
-import model.Notificacao;
 import model.Objecto;
+import model.Perfil;
 import model.Procura;
 import model.Reclamacao;
 import model.RegraNegocioException;
 import model.Sector;
 import model.Utilizador;
 import model.Zona;
-import repository.Persistencia;
+import repository.BaseDados;
+import service.PrazoService;
+import service.ReclamacaoService;
+import service.RegistoService;
+import service.Relogio;
 
-/** Menus de consola. Cada perfil vê as suas opções. Os dados são gravados depois de cada operação. */
+/** Menus da consola. Cada perfil vê só o que pode fazer. Depois de cada acção os dados são guardados. */
 public class Menus {
 
-    private final Sistema sis;
-    private final Consola consola;
-    private final String ficheiroDados;
+    private final BaseDados base;
+    private final Relogio relogio;
+    private final RegistoService registo;
+    private final ReclamacaoService reclamacoes;
+    private final PrazoService prazos;
+    private final Path ficheiro;
+    private final Scanner teclado = new Scanner(System.in);
 
-    public Menus(Sistema sis, Consola consola, String ficheiroDados) {
-        this.sis = sis;
-        this.consola = consola;
-        this.ficheiroDados = ficheiroDados;
+    public Menus(BaseDados base, Relogio relogio, RegistoService registo, ReclamacaoService reclamacoes,
+                 PrazoService prazos, Path ficheiro) {
+        this.base = base;
+        this.relogio = relogio;
+        this.registo = registo;
+        this.reclamacoes = reclamacoes;
+        this.prazos = prazos;
+        this.ficheiro = ficheiro;
     }
 
-    // ------------------------------------------------------------------ menu inicial
+    // ============================================================ menu inicial
 
-    public void executar() {
-        boolean continuar = true;
-        while (continuar) {
-            System.out.println();
-            System.out.println("=== ACHADOS E PERDIDOS - UJC ===");
-            System.out.println("1) Entrar");
-            System.out.println("2) Criar conta (estudante ou docente)");
-            System.out.println("3) Pesquisar catálogo público");
-            System.out.println("0) Sair");
-            int op = consola.lerInt("Opção:");
-            try {
-                if (op == 1) {
-                    entrar();
-                } else if (op == 2) {
-                    criarConta();
-                } else if (op == 3) {
-                    pesquisarCatalogo();
-                } else if (op == 0) {
-                    continuar = false;
+    public void iniciar() {
+        while (true) {
+            System.out.println("\n=== Achados e Perdidos - UJC ===");
+            System.out.println("1) Entrar   2) Criar conta   3) Ver catálogo   0) Sair");
+            String opcao = ler("Opção");
+            if (opcao.equals("0")) {
+                return;
+            } else if (opcao.equals("1")) {
+                Utilizador u = base.entrar(ler("Número"), ler("Palavra-passe"));
+                if (u == null) {
+                    System.out.println("Número ou palavra-passe errados.");
                 } else {
-                    System.out.println("Opção inválida.");
+                    menuDoPerfil(u);
                 }
-            } catch (RegraNegocioException e) {
-                System.out.println("Erro: " + e.getMessage());
+            } else if (opcao.equals("2")) {
+                tentar(this::criarConta);
+            } else if (opcao.equals("3")) {
+                mostrarCatalogo();
             }
-        }
-        gravar();
-        System.out.println("Até à próxima.");
-    }
-
-    private void gravar() {
-        Persistencia.gravar(sis.base, ficheiroDados);
-    }
-
-    private void entrar() {
-        String numero = consola.ler("Número:");
-        String senha = consola.ler("Palavra-passe:");
-        Utilizador u = sis.autenticacao.entrar(numero, senha);
-        System.out.println("Bem-vindo, " + u.getNome() + ".");
-        int novas = 0;
-        List<Notificacao> ns = sis.notificacoes.doUtilizador(u);
-        for (int i = 0; i < ns.size(); i++) {
-            if (!ns.get(i).isLida()) {
-                novas++;
-            }
-        }
-        if (novas > 0) {
-            System.out.println("Tem " + novas + " notificação(ões) por ler.");
-        }
-        if (u instanceof FuncionarioSector) {
-            menuFuncionario((FuncionarioSector) u);
-        } else if (u instanceof Gestor) {
-            menuGestor((Gestor) u);
-        } else {
-            menuUtilizador(u);
         }
     }
 
     private void criarConta() {
-        String tipo = consola.ler("Tipo (1 = estudante, 2 = docente):");
-        String nome = consola.ler("Nome completo:");
-        String numero = consola.ler("Número institucional:");
-        String email = consola.ler("E-mail:");
-        String doc = consola.ler("N.º do documento de identificação:");
-        String senha = consola.ler("Palavra-passe (mín. 4 caracteres):");
-        if (tipo.equals("2")) {
-            sis.autenticacao.criarDocente(nome, numero, email, doc, senha);
-        } else {
-            sis.autenticacao.criarEstudante(nome, numero, email, doc, senha);
-        }
-        gravar();
-        System.out.println("Conta criada. Já pode entrar.");
+        Perfil perfil = ler("Perfil (1 = estudante, 2 = docente)").equals("2") ? Perfil.DOCENTE : Perfil.ESTUDANTE;
+        base.criarUtilizador(ler("Número"), ler("Nome"), ler("Email"), ler("Nº do documento de identificação"),
+                ler("Palavra-passe"), perfil, null);
+        System.out.println("Conta criada.");
+        base.guardar(ficheiro);
     }
 
-    // ------------------------------------------------------------------ estudante / docente
-
-    private void menuUtilizador(Utilizador u) {
-        boolean continuar = true;
-        while (continuar) {
-            System.out.println();
-            System.out.println("--- Menu de " + u.getNome() + " ---");
-            System.out.println("1) Registar objecto ENCONTRADO");
-            System.out.println("2) Registar objecto PERDIDO");
-            System.out.println("3) As minhas procuras");
-            System.out.println("4) Pesquisar catálogo");
-            System.out.println("5) Reclamar um objecto");
-            System.out.println("6) As minhas reclamações");
-            System.out.println("7) Notificações");
-            System.out.println("0) Sair da conta");
-            int op = consola.lerInt("Opção:");
-            try {
-                if (op == 1) {
-                    registarEncontrado(u);
-                } else if (op == 2) {
-                    registarPerdido(u);
-                } else if (op == 3) {
-                    minhasProcuras(u);
-                } else if (op == 4) {
-                    pesquisarCatalogo();
-                } else if (op == 5) {
-                    reclamar(u);
-                } else if (op == 6) {
-                    minhasReclamacoes(u);
-                } else if (op == 7) {
-                    notificacoes(u);
-                } else if (op == 0) {
-                    continuar = false;
-                } else {
-                    System.out.println("Opção inválida.");
-                }
-            } catch (RegraNegocioException e) {
-                System.out.println("Erro: " + e.getMessage());
+    private void menuDoPerfil(Utilizador u) {
+        while (true) {
+            System.out.println("\n--- " + u + " | avisos novos: " + u.naoLidas() + " ---");
+            List<String> opcoes = switch (u.getPerfil()) {
+                case ESTUDANTE, DOCENTE -> List.of("Registar objecto encontrado", "Registar objecto perdido",
+                        "Ver / pesquisar catálogo", "As minhas procuras", "Reclamar um objecto",
+                        "As minhas reclamações", "Avisos");
+                case FUNCIONARIO -> List.of("Confirmar entrada de objecto", "Rever reclamações",
+                        "Entregar objecto aprovado", "Executar destino aprovado", "Objectos do meu sector", "Avisos");
+                case GESTOR -> List.of("Executar rotina de prazos", "Decidir recursos", "Aprovar destino final",
+                        "Relatório", "Avançar o relógio (simulação)", "Avisos");
+            };
+            for (int i = 0; i < opcoes.size(); i++) {
+                System.out.println((i + 1) + ") " + opcoes.get(i));
             }
-            gravar();
+            System.out.println("0) Sair da conta");
+            String opcao = ler("Opção");
+            if (opcao.equals("0")) {
+                return;
+            }
+            String escolhida = opcao.matches("\\d+") && Integer.parseInt(opcao) <= opcoes.size()
+                    ? opcoes.get(Integer.parseInt(opcao) - 1) : "";
+            tentar(() -> executar(u, escolhida));
+            base.guardar(ficheiro);
         }
     }
+
+    private void executar(Utilizador u, String opcao) {
+        switch (opcao) {
+            case "Registar objecto encontrado" -> registarEncontrado(u);
+            case "Registar objecto perdido" -> registarPerda(u);
+            case "Ver / pesquisar catálogo" -> mostrarCatalogo();
+            case "As minhas procuras" -> minhasProcuras(u);
+            case "Reclamar um objecto" -> reclamar(u);
+            case "As minhas reclamações" -> minhasReclamacoes(u);
+            case "Confirmar entrada de objecto" -> confirmarEntrada(u);
+            case "Rever reclamações" -> reverReclamacoes(u);
+            case "Entregar objecto aprovado" -> entregar(u);
+            case "Executar destino aprovado" -> executarDestino(u);
+            case "Objectos do meu sector" -> base.objectos.stream().filter(o -> o.getSector() == u.getSector())
+                    .forEach(o -> System.out.println("  " + o + " | " + o.getLocalizacaoFisica()));
+            case "Executar rotina de prazos" -> prazos.executarRotina().forEach(l -> System.out.println("  " + l));
+            case "Decidir recursos" -> decidirRecursos(u);
+            case "Aprovar destino final" -> aprovarDestino(u);
+            case "Relatório" -> relatorio();
+            case "Avançar o relógio (simulação)" -> {
+                relogio.avancarDias(Long.parseLong(ler("Quantos dias")));
+                System.out.println("Data actual do sistema: " + relogio.agora());
+            }
+            case "Avisos" -> {
+                u.getNotificacoes().forEach(n -> System.out.println("  - " + n));
+                u.marcarComoLidas();
+            }
+            default -> System.out.println("Opção inválida.");
+        }
+    }
+
+    // ============================================================ estudante / docente
 
     private void registarEncontrado(Utilizador u) {
-        Categoria cat = consola.escolherEnum("Categoria:", Categoria.values());
-        if (cat == null) {
-            return;
-        }
-        String desc = consola.ler("Descrição:");
-        String cor = consola.ler("Cor:");
-        String marca = consola.ler("Marca:");
-        Zona zona = consola.escolherEnum("Onde foi encontrado?", Zona.values());
-        if (zona == null) {
-            return;
-        }
-        java.time.LocalDateTime quando = consola.lerDataHora("Quando foi encontrado?", sis.relogio.agora());
-        String foto = consola.ler("Ficheiro da foto (caminho ou nome):");
-        String detalhe = consola.ler("Detalhe identificador que NÃO será publicado (ex.: autocolante, risco, conteúdo):");
-        Sector sector = consola.escolherEnum("Onde vai entregar?", Sector.values());
-        if (sector == null) {
-            return;
-        }
-        Objecto o = sis.registo.registarEncontrado(u, cat, desc, cor, marca, zona, quando, foto, detalhe, sector);
-        System.out.println("Pré-registo criado. Código: " + o.getCodigo() + ". Entregue o objecto na " + sector
-                + " em 48 horas, indicando o código.");
+        Categoria c = escolher("Categoria", Categoria.values());
+        String descricao = ler("Descrição");
+        String cor = ler("Cor");
+        String marca = ler("Marca (pode ficar vazio)");
+        Zona zona = escolher("Onde encontrou", Zona.values());
+        String foto = c.isFotoObrigatoria() ? ler("Nome do ficheiro da foto") : "";
+        String detalhe = ler("Detalhe oculto (só o dono saberia; fica escondido)");
+        Sector sector = escolher("Onde vai entregar", Sector.values());
+        Objecto o = registo.registarEncontrado(u, c, descricao, cor, marca, zona, relogio.agora(), foto, detalhe,
+                sector);
+        System.out.println("Registado. Código: " + o.getCodigo() + ". Entregue-o na " + sector + ".");
     }
 
-    private void registarPerdido(Utilizador u) {
-        Categoria cat = consola.escolherEnum("Categoria:", Categoria.values());
-        if (cat == null) {
-            return;
+    private void registarPerda(Utilizador u) {
+        Procura p = registo.registarPerda(u, escolher("Categoria", Categoria.values()), ler("Descrição"),
+                ler("Cor"), ler("Marca (pode ficar vazio)"), escolher("Onde perdeu", Zona.values()),
+                LocalDate.parse(ler("Data da perda (AAAA-MM-DD)")));
+        System.out.println("Procura #" + p.getId() + " registada.");
+    }
+
+    private void mostrarCatalogo() {
+        Categoria c = ler("Filtrar por categoria? (s/n)").equalsIgnoreCase("s")
+                ? escolher("Categoria", Categoria.values()) : null;
+        List<Objecto> lista = Consultas.pesquisar(base.objectos, c, ler("Texto a pesquisar (pode ficar vazio)"));
+        if (lista.isEmpty()) {
+            System.out.println("Nenhum objecto encontrado.");
         }
-        String desc = consola.ler("Descrição:");
-        String cor = consola.ler("Cor:");
-        String marca = consola.ler("Marca:");
-        Zona zona = consola.escolherEnum("Onde acha que perdeu?", Zona.values());
-        if (zona == null) {
-            return;
-        }
-        java.time.LocalDate quando = consola.lerData("Quando perdeu?");
-        String detalhe = consola.ler("Detalhe que só o dono sabe (não será publicado):");
-        Procura p = sis.registo.registarPerda(u, cat, desc, cor, marca, zona, quando, detalhe);
-        List<Correspondencia> candidatos = sis.correspondencia.candidatosPara(p);
-        if (candidatos.isEmpty()) {
-            System.out.println("Procura #" + p.getId() + " registada. Ainda não há candidatos; será avisado.");
-        } else {
-            System.out.println("Procura #" + p.getId() + " registada. Candidatos encontrados:");
-            for (int i = 0; i < candidatos.size(); i++) {
-                System.out.println("  - " + String.format("%.2f", candidatos.get(i).getPontuacao()) + " | "
-                        + sis.catalogo.resumoPublico(candidatos.get(i).getObjecto()));
-            }
-        }
+        lista.forEach(o -> System.out.println("  " + o.resumoPublico()));
     }
 
     private void minhasProcuras(Utilizador u) {
-        boolean alguma = false;
-        for (int i = 0; i < sis.base.getProcuras().size(); i++) {
-            Procura p = sis.base.getProcuras().get(i);
-            if (p.getDono().getId() == u.getId()) {
-                alguma = true;
-                System.out.println(p);
-                if (p.getEstado() == EstadoProcura.ACTIVA) {
-                    List<Correspondencia> c = sis.correspondencia.candidatosPara(p);
-                    for (int j = 0; j < c.size(); j++) {
-                        System.out.println("     candidato " + String.format("%.2f", c.get(j).getPontuacao()) + " | "
-                                + sis.catalogo.resumoPublico(c.get(j).getObjecto()));
-                    }
-                }
-            }
-        }
-        if (!alguma) {
-            System.out.println("Não tem procuras registadas.");
-        }
-    }
-
-    private void pesquisarCatalogo() {
-        Categoria cat = null;
-        if (consola.lerSimNao("Filtrar por categoria?")) {
-            cat = consola.escolherEnum("Categoria:", Categoria.values());
-        }
-        Zona zona = null;
-        if (consola.lerSimNao("Filtrar por zona?")) {
-            zona = consola.escolherEnum("Zona:", Zona.values());
-        }
-        String cor = consola.ler("Cor (vazio = qualquer):");
-        String texto = consola.ler("Palavra na descrição (vazio = qualquer):");
-        List<Objecto> r = sis.catalogo.pesquisar(cat, cor, zona, texto);
-        if (r.isEmpty()) {
-            System.out.println("Nenhum objecto encontrado.");
-        }
-        for (int i = 0; i < r.size(); i++) {
-            System.out.println("  " + sis.catalogo.resumoPublico(r.get(i)));
-        }
+        base.procuras.stream().filter(p -> p.getDono().equals(u)).forEach(p -> {
+            System.out.println("  " + p);
+            Consultas.candidatos(p, base.objectos).forEach(o -> System.out.println("     possível: " + o.resumoPublico()));
+        });
     }
 
     private void reclamar(Utilizador u) {
-        String codigo = consola.ler("Código do objecto (ex.: OBJ-2026-0001):");
-        Objecto o = sis.base.objectoPorCodigo(codigo);
-        if (o == null) {
-            throw new RegraNegocioException("Não existe o objecto " + codigo + ".");
+        String codigo = ler("Código do objecto");
+        Objecto o = base.objecto(codigo);
+        if (o != null && o.getCategoria().isSensivel()) {
+            System.out.println("Este objecto tem dados reservados. Descreva um detalhe que só o dono saberia.");
         }
-        System.out.println(sis.catalogo.resumoPublico(o));
-        System.out.println("Pergunta de verificação: descreva o detalhe que identifica este objecto como seu "
-                + "(algo que não aparece no catálogo).");
-        String resposta = consola.ler("Resposta:");
-        String provas = consola.ler("Provas (foto antiga, factura, captura de ecrã; vazio = nenhuma):");
-        Procura associada = null;
-        List<Procura> minhas = new ArrayList<Procura>();
-        for (int i = 0; i < sis.base.getProcuras().size(); i++) {
-            Procura p = sis.base.getProcuras().get(i);
-            if (p.getDono().getId() == u.getId() && p.getEstado() == EstadoProcura.ACTIVA) {
-                minhas.add(p);
-            }
+        Procura procura = null;
+        String idProcura = ler("Nº da sua procura (Enter se não tiver)");
+        if (!idProcura.isBlank()) {
+            procura = base.procura(Integer.parseInt(idProcura));
         }
-        if (!minhas.isEmpty() && consola.lerSimNao("Associar a uma das suas procuras activas?")) {
-            associada = consola.escolher("Procura:", minhas);
-        }
-        Reclamacao r = sis.reclamacoes.submeter(u, codigo, resposta, provas, associada);
-        System.out.println(r);
-        if (r.getEstado() == EstadoReclamacao.PROVA_ADICIONAL) {
-            System.out.println("Pontuação insuficiente. Acrescente provas em 48 horas (menu 'As minhas reclamações').");
-        } else {
-            System.out.println("Reclamação enviada para verificação.");
-        }
+        Reclamacao r = reclamacoes.submeter(u, codigo, ler("Detalhe que só o dono saberia"),
+                ler("Provas (ficheiro, foto, recibo; pode ficar vazio)"), procura);
+        System.out.println("Reclamação #" + r.getId() + ": " + r.getEstado());
     }
 
     private void minhasReclamacoes(Utilizador u) {
-        List<Reclamacao> lista = sis.reclamacoes.doUtilizador(u);
-        if (lista.isEmpty()) {
-            System.out.println("Não tem reclamações.");
+        base.reclamacoes.stream().filter(r -> r.getReclamante().equals(u)).forEach(r -> System.out.println("  " + r));
+        String id = ler("Nº da reclamação a tratar (Enter para voltar)");
+        if (id.isBlank()) {
             return;
         }
-        Reclamacao r = consola.escolher("As suas reclamações:", lista);
-        if (r == null) {
-            return;
-        }
-        System.out.println(r);
-        if (r.getMotivoDecisao() != null) {
-            System.out.println("Motivo da decisão: " + r.getMotivoDecisao());
-        }
-        if (r.getEstado() == EstadoReclamacao.APROVADA) {
-            System.out.println("Levante o objecto na " + r.getObjecto().getSector() + " até " + r.getPrazoLevantamento()
-                    + ", com o documento de identificação.");
-        } else if (r.getEstado() == EstadoReclamacao.PROVA_ADICIONAL) {
-            if (consola.lerSimNao("Acrescentar provas agora?")) {
-                String resp = consola.ler("Mais informação sobre o detalhe do objecto:");
-                String provas = consola.ler("Novas provas:");
-                System.out.println(sis.reclamacoes.completarProva(u, r.getId(), resp, provas));
-            }
-        } else if (r.getEstado() == EstadoReclamacao.RECUSADA && !r.isRecursoUsado()) {
-            if (consola.lerSimNao("Pedir recurso ao Gestor?")) {
-                String just = consola.ler("Justificação:");
-                System.out.println(sis.reclamacoes.pedirRecurso(u, r.getId(), just));
-            }
-        }
-    }
-
-    private void notificacoes(Utilizador u) {
-        List<Notificacao> lista = sis.notificacoes.doUtilizador(u);
-        if (lista.isEmpty()) {
-            System.out.println("Sem notificações.");
-        }
-        for (int i = 0; i < lista.size(); i++) {
-            System.out.println(lista.get(i));
-        }
-        sis.notificacoes.marcarTodasLidas(u);
-    }
-
-    // ------------------------------------------------------------------ funcionário
-
-    private void menuFuncionario(FuncionarioSector f) {
-        boolean continuar = true;
-        while (continuar) {
-            System.out.println();
-            System.out.println("--- " + f.getNome() + " (" + f.getSector() + ") ---");
-            System.out.println("1) Confirmar entrada de objecto");
-            System.out.println("2) Rever reclamações");
-            System.out.println("3) Entregar objecto (levantamento)");
-            System.out.println("4) Executar destino final aprovado");
-            System.out.println("5) Inventário do sector");
-            System.out.println("6) Histórico de um objecto");
-            System.out.println("7) Notificações");
-            System.out.println("0) Sair da conta");
-            int op = consola.lerInt("Opção:");
-            try {
-                if (op == 1) {
-                    confirmarEntrada(f);
-                } else if (op == 2) {
-                    reverReclamacoes(f);
-                } else if (op == 3) {
-                    entregar(f);
-                } else if (op == 4) {
-                    executarDestino(f);
-                } else if (op == 5) {
-                    inventario(f.getSector());
-                } else if (op == 6) {
-                    historico();
-                } else if (op == 7) {
-                    notificacoes(f);
-                } else if (op == 0) {
-                    continuar = false;
-                } else {
-                    System.out.println("Opção inválida.");
-                }
-            } catch (RegraNegocioException e) {
-                System.out.println("Erro: " + e.getMessage());
-            }
-            gravar();
-        }
-    }
-
-    private void confirmarEntrada(FuncionarioSector f) {
-        List<Objecto> pendentes = new ArrayList<Objecto>();
-        for (int i = 0; i < sis.base.getObjectos().size(); i++) {
-            Objecto o = sis.base.getObjectos().get(i);
-            if (o.getEstado() == EstadoObjecto.PRE_REGISTADO && o.getSector() == f.getSector()) {
-                pendentes.add(o);
-            }
-        }
-        if (pendentes.isEmpty()) {
-            System.out.println("Não há pré-registos à espera nesta secção.");
-            return;
-        }
-        Objecto o = consola.escolher("Pré-registos à espera de entrega:", pendentes);
-        if (o == null) {
-            return;
-        }
-        System.out.println("Detalhe oculto registado pelo achador: " + o.getDetalheOculto());
-        boolean conforme = consola.lerSimNao("O objecto entregue está conforme o registo?");
-        String local = "";
-        String nota = "";
-        if (conforme) {
-            local = consola.ler("Localização física (ex.: Armário 2, prateleira B):");
+        Reclamacao r = reclamacoes.obter(Integer.parseInt(id));
+        if (r.getEstado() == EstadoReclamacao.PROVA_ADICIONAL) {
+            reclamacoes.completarProva(u, r.getId(), ler("Mais informação"), ler("Mais provas"));
+        } else if (r.getEstado() == EstadoReclamacao.RECUSADA) {
+            reclamacoes.pedirRecurso(u, r.getId(), ler("Justificação do recurso"));
         } else {
-            nota = consola.ler("Motivo:");
+            System.out.println("Nada a fazer nesta reclamação (" + r.getEstado() + ").");
+            return;
         }
-        sis.registo.confirmarEntrada(f, o.getCodigo(), conforme, local, nota);
-        System.out.println(conforme ? "Entrada confirmada. Etiquete o objecto com " + o.getCodigo() + "."
-                : "Entrada recusada.");
+        System.out.println("Reclamação #" + r.getId() + ": " + r.getEstado());
     }
 
-    private void reverReclamacoes(FuncionarioSector f) {
-        List<Reclamacao> lista = sis.reclamacoes.doSectorNoEstado(f.getSector(), EstadoReclamacao.EM_VERIFICACAO);
+    // ============================================================ funcionário
+
+    private void confirmarEntrada(Utilizador f) {
+        base.objectos.stream().filter(o -> o.getEstado() == EstadoObjecto.PRE_REGISTADO
+                && f.ehFuncionarioDe(o.getSector())).forEach(o -> System.out.println("  " + o));
+        String codigo = ler("Código do objecto");
+        boolean conforme = ler("O objecto está conforme o registo? (s/n)").equalsIgnoreCase("s");
+        String local = conforme ? ler("Onde fica guardado") : "";
+        String nota = conforme ? "" : ler("Motivo");
+        Objecto o = registo.confirmarEntrada(f, codigo, conforme, local, nota);
+        System.out.println("Objecto " + o.getCodigo() + ": " + o.getEstado());
+    }
+
+    private void reverReclamacoes(Utilizador f) {
+        List<Reclamacao> lista = base.reclamacoes.stream()
+                .filter(r -> r.getEstado() == EstadoReclamacao.EM_VERIFICACAO
+                        && f.ehFuncionarioDe(r.getObjecto().getSector())).toList();
         if (lista.isEmpty()) {
-            System.out.println("Não há reclamações para rever.");
+            System.out.println("Nada para rever.");
             return;
         }
-        Reclamacao r = consola.escolher("Reclamações em verificação:", lista);
-        if (r == null) {
-            return;
-        }
-        Objecto o = r.getObjecto();
-        System.out.println("Objecto: " + o);
-        System.out.println("Detalhe oculto registado: " + o.getDetalheOculto());
-        System.out.println("Resposta do reclamante: " + r.getRespostaDetalhe());
-        System.out.println("Provas: " + r.getProvas());
-        System.out.println("Reclamante: " + r.getReclamante() + " | documento: "
-                + r.getReclamante().getDocumentoIdentificacao());
-        boolean aprovar = consola.lerSimNao("Aprovar a reclamação?");
-        if (aprovar) {
-            boolean identidade = consola.lerSimNao("Conferiu a identidade do reclamante?");
-            sis.reclamacoes.revisar(f, r.getId(), true, identidade, null);
-            System.out.println("Reclamação aprovada.");
-        } else {
-            String motivo = consola.ler("Motivo da recusa:");
-            sis.reclamacoes.revisar(f, r.getId(), false, false, motivo);
-            System.out.println("Reclamação recusada.");
-        }
-    }
-
-    private void entregar(FuncionarioSector f) {
-        List<Reclamacao> lista = sis.reclamacoes.doSectorNoEstado(f.getSector(), EstadoReclamacao.APROVADA);
-        if (lista.isEmpty()) {
-            System.out.println("Não há levantamentos aprovados.");
-            return;
-        }
-        Reclamacao r = consola.escolher("Levantamentos aprovados:", lista);
-        if (r == null) {
-            return;
-        }
-        System.out.println("Local de armazenamento: " + r.getObjecto().getLocalizacaoFisica());
-        boolean doc = consola.lerSimNao("Conferiu o documento de identificação (n.º "
-                + r.getReclamante().getDocumentoIdentificacao() + ")?");
-        sis.reclamacoes.entregar(f, r.getId(), doc);
-        System.out.println("Objecto entregue e registado.");
-    }
-
-    private void executarDestino(FuncionarioSector f) {
-        List<Objecto> lista = new ArrayList<Objecto>();
-        for (int i = 0; i < sis.base.getObjectos().size(); i++) {
-            Objecto o = sis.base.getObjectos().get(i);
-            if (o.getEstado() == EstadoObjecto.DESTINO_APROVADO && o.getSector() == f.getSector()) {
-                lista.add(o);
+        for (Reclamacao r : lista) {
+            System.out.println("\n  " + r);
+            System.out.println("  Detalhe oculto guardado: " + r.getObjecto().getDetalheOculto());
+            System.out.println("  Resposta do reclamante:  " + r.getResposta());
+            System.out.println("  Provas: " + r.getProvas());
+            if (ler("Aprovar? (s/n)").equalsIgnoreCase("s")) {
+                boolean identidade = ler("Conferiu a identidade do reclamante? (s/n)").equalsIgnoreCase("s");
+                reclamacoes.revisar(f, r.getId(), true, identidade, null);
+            } else {
+                reclamacoes.revisar(f, r.getId(), false, false, ler("Motivo da recusa"));
             }
-        }
-        Objecto o = consola.escolher("Objectos com destino aprovado:", lista);
-        if (o == null) {
-            return;
-        }
-        sis.prazos.executarDestino(f, o.getCodigo());
-        System.out.println("Destino executado: " + o.getDestino());
-    }
-
-    private void inventario(Sector sector) {
-        boolean algum = false;
-        for (int i = 0; i < sis.base.getObjectos().size(); i++) {
-            Objecto o = sis.base.getObjectos().get(i);
-            if (o.getSector() == sector && o.getEstado() != EstadoObjecto.CANCELADO) {
-                System.out.println("  " + o + " | " + o.getLocalizacaoFisica() + " | prazo " + o.getPrazoGuarda());
-                algum = true;
-            }
-        }
-        if (!algum) {
-            System.out.println("Sem objectos.");
+            System.out.println("  -> " + r.getEstado());
         }
     }
 
-    private void historico() {
-        String codigo = consola.ler("Código do objecto:");
-        Objecto o = sis.base.objectoPorCodigo(codigo);
-        if (o == null) {
-            throw new RegraNegocioException("Não existe o objecto " + codigo + ".");
-        }
-        System.out.println(o);
-        for (int i = 0; i < o.getHistorico().size(); i++) {
-            System.out.println("   " + o.getHistorico().get(i));
-        }
+    private void entregar(Utilizador f) {
+        base.reclamacoes.stream().filter(r -> r.getEstado() == EstadoReclamacao.APROVADA
+                && f.ehFuncionarioDe(r.getObjecto().getSector())).forEach(r -> System.out.println("  " + r
+                + " | levantar até " + r.getPrazoLevantamento()));
+        int id = Integer.parseInt(ler("Nº da reclamação"));
+        boolean documento = ler("Conferiu o documento de identificação? (s/n)").equalsIgnoreCase("s");
+        System.out.println("-> " + reclamacoes.entregar(f, id, documento).getEstado());
     }
 
-    // ------------------------------------------------------------------ gestor
-
-    private void menuGestor(Gestor g) {
-        boolean continuar = true;
-        while (continuar) {
-            System.out.println();
-            System.out.println("--- Gestor: " + g.getNome() + " ---");
-            System.out.println("1) Decidir recursos");
-            System.out.println("2) Aprovar destino final");
-            System.out.println("3) Relatório de indicadores");
-            System.out.println("4) Executar rotina de prazos");
-            System.out.println("5) Avançar o relógio (simulação)");
-            System.out.println("6) Notificações");
-            System.out.println("0) Sair da conta");
-            int op = consola.lerInt("Opção:");
-            try {
-                if (op == 1) {
-                    decidirRecursos(g);
-                } else if (op == 2) {
-                    aprovarDestino(g);
-                } else if (op == 3) {
-                    List<String> linhas = sis.relatorios.gerar();
-                    for (int i = 0; i < linhas.size(); i++) {
-                        System.out.println(linhas.get(i));
-                    }
-                } else if (op == 4) {
-                    List<String> linhas = sis.prazos.executarRotina();
-                    for (int i = 0; i < linhas.size(); i++) {
-                        System.out.println(linhas.get(i));
-                    }
-                } else if (op == 5) {
-                    int dias = consola.lerInt("Quantos dias avançar?");
-                    if (dias > 0) {
-                        sis.relogio.avancarDias(dias);
-                        System.out.println("Data simulada: " + sis.relogio.agora());
-                    }
-                } else if (op == 6) {
-                    notificacoes(g);
-                } else if (op == 0) {
-                    continuar = false;
-                } else {
-                    System.out.println("Opção inválida.");
-                }
-            } catch (RegraNegocioException e) {
-                System.out.println("Erro: " + e.getMessage());
-            }
-            gravar();
-        }
+    private void executarDestino(Utilizador f) {
+        base.objectos.stream().filter(o -> o.getEstado() == EstadoObjecto.DESTINO_APROVADO
+                && f.ehFuncionarioDe(o.getSector())).forEach(o -> System.out.println("  " + o + " | " + o.getDestino()));
+        System.out.println("-> " + prazos.executarDestino(f, ler("Código do objecto")).getEstado());
     }
 
-    private void decidirRecursos(Gestor g) {
-        List<Reclamacao> lista = sis.reclamacoes.noEstado(EstadoReclamacao.EM_RECURSO);
+    // ============================================================ gestor
+
+    private void decidirRecursos(Utilizador g) {
+        List<Reclamacao> lista = base.reclamacoes.stream()
+                .filter(r -> r.getEstado() == EstadoReclamacao.EM_RECURSO).toList();
         if (lista.isEmpty()) {
-            System.out.println("Não há recursos pendentes.");
-            return;
+            System.out.println("Nenhum recurso pendente.");
         }
-        Reclamacao r = consola.escolher("Recursos pendentes:", lista);
-        if (r == null) {
-            return;
+        for (Reclamacao r : lista) {
+            System.out.println("\n  " + r + "\n  Resposta e recurso: " + r.getResposta());
+            boolean aprovar = ler("Aprovar o recurso? (s/n)").equalsIgnoreCase("s");
+            System.out.println("  -> " + reclamacoes.decidirRecurso(g, r.getId(), aprovar, ler("Motivo")).getEstado());
         }
-        System.out.println("Objecto: " + r.getObjecto());
-        System.out.println("Detalhe oculto: " + r.getObjecto().getDetalheOculto());
-        System.out.println("Resposta e recurso: " + r.getRespostaDetalhe());
-        System.out.println("Motivo da recusa anterior: " + r.getMotivoDecisao());
-        boolean aprovar = consola.lerSimNao("Aprovar o recurso?");
-        String motivo = consola.ler("Motivo da decisão:");
-        sis.reclamacoes.decidirRecurso(g, r.getId(), aprovar, motivo);
-        System.out.println("Decisão registada.");
     }
 
-    private void aprovarDestino(Gestor g) {
-        List<Objecto> lista = sis.prazos.noEstado(EstadoObjecto.NAO_RECLAMADO);
-        if (lista.isEmpty()) {
-            System.out.println("Não há objectos não reclamados.");
-            return;
+    private void aprovarDestino(Utilizador g) {
+        base.objectos.stream().filter(o -> o.getEstado() == EstadoObjecto.NAO_RECLAMADO)
+                .forEach(o -> System.out.println("  " + o + " | sugerido: " + o.getDestino()));
+        String codigo = ler("Código do objecto");
+        System.out.println("Opções: " + PrazoService.DESTINOS);
+        System.out.println("-> " + prazos.aprovarDestino(g, codigo, ler("Destino")).getEstado());
+    }
+
+    private void relatorio() {
+        System.out.println("  Objectos por estado:    " + Consultas.contarPorEstado(base.objectos));
+        System.out.println("  Objectos por categoria: " + Consultas.contarPorCategoria(base.objectos));
+        System.out.printf("  Taxa de devolução: %.0f%%%n", Consultas.taxaDevolucao(base.objectos));
+    }
+
+    // ============================================================ ajudas de consola
+
+    /** Executa uma acção e mostra a mensagem de erro (em vez de fechar o programa) se algo falhar. */
+    private void tentar(Runnable accao) {
+        try {
+            accao.run();
+        } catch (RegraNegocioException | IllegalArgumentException | java.time.DateTimeException e) {
+            System.out.println("Erro: " + e.getMessage());
         }
-        Objecto o = consola.escolher("Objectos não reclamados:", lista);
-        if (o == null) {
-            return;
+    }
+
+    private String ler(String pergunta) {
+        System.out.print(pergunta + ": ");
+        return teclado.hasNextLine() ? teclado.nextLine().trim() : "0";
+    }
+
+    /** Mostra uma lista numerada e devolve a opção escolhida. */
+    private <T> T escolher(String pergunta, T[] opcoes) {
+        for (int i = 0; i < opcoes.length; i++) {
+            System.out.println("   " + (i + 1) + ") " + opcoes[i]);
         }
-        System.out.println("Destino sugerido: " + o.getDestino());
-        Destino d = consola.escolherEnum("Destino final:", Destino.values());
-        if (d == null) {
-            return;
+        int n = Integer.parseInt(ler(pergunta));
+        if (n < 1 || n > opcoes.length) {
+            throw new IllegalArgumentException("Opção fora da lista.");
         }
-        sis.prazos.aprovarDestino(g, o.getCodigo(), d);
-        System.out.println("Destino aprovado.");
+        return opcoes[n - 1];
     }
 }

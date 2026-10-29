@@ -1,46 +1,48 @@
 package model;
 
-/** Categorias de objectos. Cada categoria define sensibilidade, foto e prazo de guarda (RN02, RN06, RN17). */
+import logico.Regras;
+
+/**
+ * Tipos de objecto. O que é sensível, se a foto é obrigatória, o prazo de guarda
+ * e o destino sugerido vêm das regras (regras/regras.pl), não estão escritos aqui.
+ */
 public enum Categoria {
-    DOCUMENTO("Documento de identificação", true, false, 30),
-    CARTAO("Cartão (estudante, bancário)", true, false, 30),
-    TELEMOVEL("Telemóvel", true, true, 90),
-    CARTEIRA("Carteira", true, true, 90),
-    CHAVES("Chaves", false, true, 90),
-    MOCHILA("Mochila ou saco", false, true, 90),
-    MATERIAL_ESTUDO("Material de estudo", false, true, 90),
-    ELECTRONICO("Portátil, carregador, auscultadores", false, true, 90),
-    VESTUARIO("Vestuário", false, true, 90),
-    OUTRO("Outro", false, true, 90);
+    TELEMOVEL("Telemóvel"),
+    CARTEIRA("Carteira"),
+    DOCUMENTO("Documento de identificação"),
+    CARTAO("Cartão (estudante, bancário)"),
+    CHAVES("Chaves"),
+    MOCHILA("Mochila ou saco"),
+    MATERIAL_ESTUDO("Material de estudo"),
+    ELECTRONICO("Portátil, carregador, auscultadores"),
+    VESTUARIO("Vestuário"),
+    OUTRO("Outro");
 
     private final String nome;
-    private final boolean sensivel;
-    private final boolean fotoObrigatoria;
-    private final int prazoGuardaDias;
 
-    Categoria(String nome, boolean sensivel, boolean fotoObrigatoria, int prazoGuardaDias) {
+    Categoria(String nome) {
         this.nome = nome;
-        this.sensivel = sensivel;
-        this.fotoObrigatoria = fotoObrigatoria;
-        this.prazoGuardaDias = prazoGuardaDias;
     }
 
-    public String getNome() {
-        return nome;
+    /** Nome usado nas regras, por exemplo "telemovel". */
+    public String chave() {
+        return name().toLowerCase();
     }
 
-    /** Objectos sensíveis nunca mostram foto nem descrição no catálogo público (RN06). */
     public boolean isSensivel() {
-        return sensivel;
+        return Regras.sensivel(chave());
     }
 
-    /** A foto é obrigatória, excepto para documentos e cartões (RN02). */
     public boolean isFotoObrigatoria() {
-        return fotoObrigatoria;
+        return Regras.fotoObrigatoria(chave());
     }
 
     public int getPrazoGuardaDias() {
-        return prazoGuardaDias;
+        return Regras.prazoGuardaDias(chave());
+    }
+
+    public String destinoSugerido() {
+        return Regras.destinoSugerido(chave());
     }
 
     @Override

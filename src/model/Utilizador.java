@@ -3,42 +3,47 @@ package model;
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.List;
 
-/** Utilizador do sistema. Classe base de Estudante, Docente, FuncionarioSector e Gestor. */
-public abstract class Utilizador implements Serializable {
+/**
+ * Pessoa que usa o sistema: estudante, docente, funcionário de um sector ou gestor.
+ * O perfil diz o que a pessoa pode fazer; o sector só é usado pelos funcionários.
+ */
+public class Utilizador implements Serializable {
 
-    private static final long serialVersionUID = 1L;
-
-    private final int id;
-    private final String nome;
     private final String numero;
+    private final String nome;
     private final String email;
-    private final String documentoIdentificacao;
-    private String senhaHash;
+    private final String documento;
+    private final String senhaGuardada;
+    private final Perfil perfil;
+    private final Sector sector;
+    private final List<String> notificacoes = new ArrayList<>();
+    private int lidas = 0;
 
-    protected Utilizador(int id, String nome, String numero, String email, String documentoIdentificacao,
-                         String senha) {
-        this.id = id;
-        this.nome = nome;
+    public Utilizador(String numero, String nome, String email, String documento, String senha,
+                      Perfil perfil, Sector sector) {
         this.numero = numero;
+        this.nome = nome;
         this.email = email;
-        this.documentoIdentificacao = documentoIdentificacao;
-        this.senhaHash = hash(senha);
+        this.documento = documento;
+        this.senhaGuardada = esconder(senha);
+        this.perfil = perfil;
+        this.sector = sector;
     }
-
-    public abstract Perfil getPerfil();
 
     public boolean verificarSenha(String senha) {
-        return senhaHash.equals(hash(senha));
+        return senhaGuardada.equals(esconder(senha));
     }
 
-    private static String hash(String texto) {
+    /** Guarda-se só o "resumo" da palavra-passe (SHA-256), nunca a palavra-passe. */
+    private static String esconder(String texto) {
         try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = md.digest(texto.getBytes(StandardCharsets.UTF_8));
+            byte[] bytes = MessageDigest.getInstance("SHA-256").digest(texto.getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < bytes.length; i++) {
-                sb.append(String.format("%02x", bytes[i]));
+            for (byte b : bytes) {
+                sb.append(String.format("%02x", b));
             }
             return sb.toString();
         } catch (Exception e) {
@@ -46,28 +51,63 @@ public abstract class Utilizador implements Serializable {
         }
     }
 
-    public int getId() {
-        return id;
+    public void receber(String mensagem) {
+        notificacoes.add(mensagem);
     }
 
-    public String getNome() {
-        return nome;
+    public List<String> getNotificacoes() {
+        return notificacoes;
+    }
+
+    public int naoLidas() {
+        return notificacoes.size() - lidas;
+    }
+
+    public void marcarComoLidas() {
+        lidas = notificacoes.size();
+    }
+
+    public boolean ehFuncionarioDe(Sector s) {
+        return perfil == Perfil.FUNCIONARIO && sector == s;
     }
 
     public String getNumero() {
         return numero;
     }
 
+    public String getNome() {
+        return nome;
+    }
+
     public String getEmail() {
         return email;
     }
 
-    public String getDocumentoIdentificacao() {
-        return documentoIdentificacao;
+    public String getDocumento() {
+        return documento;
+    }
+
+    public Perfil getPerfil() {
+        return perfil;
+    }
+
+    public Sector getSector() {
+        return sector;
+    }
+
+    /** Dois utilizadores são o mesmo se tiverem o mesmo número. */
+    @Override
+    public boolean equals(Object outro) {
+        return outro instanceof Utilizador && ((Utilizador) outro).numero.equals(numero);
+    }
+
+    @Override
+    public int hashCode() {
+        return numero.hashCode();
     }
 
     @Override
     public String toString() {
-        return nome + " (" + getPerfil() + ", n.º " + numero + ")";
+        return nome + " (" + perfil + (sector != null ? ", " + sector : "") + ")";
     }
 }

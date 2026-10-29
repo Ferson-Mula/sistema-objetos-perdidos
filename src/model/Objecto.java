@@ -6,10 +6,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Objecto encontrado e entregue (ou a entregar) a um sector. */
+/** Um objecto encontrado, entregue (ou a entregar) a um sector. */
 public class Objecto implements Serializable {
-
-    private static final long serialVersionUID = 1L;
 
     private final String codigo;
     private final Categoria categoria;
@@ -17,9 +15,9 @@ public class Objecto implements Serializable {
     private final String cor;
     private final String marca;
     private final Zona local;
-    private final LocalDateTime dataEncontrado;
+    private final LocalDateTime encontradoEm;
     private final String foto;
-    private final String detalheOculto;
+    private final String detalheOculto;   // só os funcionários o veem
     private final Utilizador achador;
     private final Sector sector;
     private final LocalDateTime criadoEm;
@@ -29,11 +27,11 @@ public class Objecto implements Serializable {
     private LocalDateTime entradaEm;
     private LocalDate prazoGuarda;
     private boolean avisoPrazoEnviado;
-    private Destino destino;
-    private final List<Movimento> historico = new ArrayList<Movimento>();
+    private String destino;
+    private final List<String> historico = new ArrayList<>();
 
     public Objecto(String codigo, Categoria categoria, String descricao, String cor, String marca, Zona local,
-                   LocalDateTime dataEncontrado, String foto, String detalheOculto, Utilizador achador,
+                   LocalDateTime encontradoEm, String foto, String detalheOculto, Utilizador achador,
                    Sector sector, LocalDateTime criadoEm) {
         this.codigo = codigo;
         this.categoria = categoria;
@@ -41,29 +39,45 @@ public class Objecto implements Serializable {
         this.cor = cor;
         this.marca = marca;
         this.local = local;
-        this.dataEncontrado = dataEncontrado;
+        this.encontradoEm = encontradoEm;
         this.foto = foto;
         this.detalheOculto = detalheOculto;
         this.achador = achador;
         this.sector = sector;
         this.criadoEm = criadoEm;
-        historico.add(new Movimento(criadoEm, achador.getNome(), "Pré-registo", null, EstadoObjecto.PRE_REGISTADO,
-                "Entrega prevista na " + sector));
+        historico.add(formatar(criadoEm, achador.getNome(), "Pré-registo", "-> " + estado));
     }
 
-    /** Única forma de mudar o estado: valida a transição e regista o movimento (RN16). */
-    public void mudarEstado(EstadoObjecto novo, String autor, String accao, String nota, LocalDateTime quando) {
+    /** Única forma de mudar o estado: confere se a mudança é permitida e regista-a no histórico. */
+    public void mudarEstado(EstadoObjecto novo, String autor, String accao, LocalDateTime quando) {
         if (!estado.podePassarPara(novo)) {
-            throw new RegraNegocioException("Transição inválida do objecto " + codigo + ": " + estado + " -> " + novo);
+            throw new IllegalArgumentException("Mudança inválida no objecto " + codigo + ": " + estado + " -> " + novo);
         }
-        historico.add(new Movimento(quando, autor, accao, estado, novo, nota));
+        historico.add(formatar(quando, autor, accao, estado + " -> " + novo));
         estado = novo;
     }
 
+    /** Chamado quando o funcionário confirma a entrada: guarda o local e calcula o prazo de guarda. */
     public void registarEntrada(String localizacaoFisica, LocalDateTime quando) {
         this.localizacaoFisica = localizacaoFisica;
         this.entradaEm = quando;
         this.prazoGuarda = quando.toLocalDate().plusDays(categoria.getPrazoGuardaDias());
+    }
+
+    /** O que qualquer pessoa pode ver no catálogo. Nunca mostra o detalhe oculto. */
+    public String resumoPublico() {
+        String texto = codigo + " | " + categoria;
+        if (categoria.isSensivel()) {
+            texto += " | (dados reservados)";
+        } else {
+            texto += " | " + descricao + (foto == null || foto.isBlank() ? "" : " | foto: " + foto);
+        }
+        return texto + " | cor: " + cor + " | encontrado: " + local + ", " + encontradoEm.toLocalDate()
+                + " | guardado na " + sector;
+    }
+
+    private static String formatar(LocalDateTime quando, String autor, String accao, String mudanca) {
+        return quando.toString().replace('T', ' ').substring(0, 16) + " | " + autor + " | " + accao + " | " + mudanca;
     }
 
     public String getCodigo() {
@@ -90,12 +104,8 @@ public class Objecto implements Serializable {
         return local;
     }
 
-    public LocalDateTime getDataEncontrado() {
-        return dataEncontrado;
-    }
-
-    public String getFoto() {
-        return foto;
+    public LocalDateTime getEncontradoEm() {
+        return encontradoEm;
     }
 
     public String getDetalheOculto() {
@@ -134,30 +144,20 @@ public class Objecto implements Serializable {
         return avisoPrazoEnviado;
     }
 
-    public void setAvisoPrazoEnviado(boolean avisoPrazoEnviado) {
-        this.avisoPrazoEnviado = avisoPrazoEnviado;
+    public void setAvisoPrazoEnviado(boolean enviado) {
+        this.avisoPrazoEnviado = enviado;
     }
 
-    public Destino getDestino() {
+    public String getDestino() {
         return destino;
     }
 
-    public void setDestino(Destino destino) {
+    public void setDestino(String destino) {
         this.destino = destino;
     }
 
-    public List<Movimento> getHistorico() {
+    public List<String> getHistorico() {
         return historico;
-    }
-
-    /** Momento em que o objecto foi devolvido, ou null. */
-    public LocalDateTime getDevolvidoEm() {
-        for (int i = 0; i < historico.size(); i++) {
-            if (historico.get(i).getPara() == EstadoObjecto.DEVOLVIDO) {
-                return historico.get(i).getQuando();
-            }
-        }
-        return null;
     }
 
     @Override

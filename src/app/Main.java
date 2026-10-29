@@ -1,48 +1,35 @@
 package app;
 
+import java.nio.file.Path;
+
 import repository.BaseDados;
-import repository.Persistencia;
-import util.Relogio;
+import service.PrazoService;
+import service.ReclamacaoService;
+import service.RegistoService;
+import service.Relogio;
 
 /**
- * Ponto de entrada.
- *   executar sem argumentos : aplicação de consola (dados em data/achados.dat)
- *   --demo                  : demonstração automática (não usa nem altera o ficheiro de dados)
- *   --reiniciar             : apaga os dados e recomeça com as contas de demonstração
+ * Ponto de entrada do programa.
+ *   sem argumentos -> abre o menu interactivo
+ *   demo           -> mostra uma demonstração automática dos 4 processos
  */
 public class Main {
 
-    public static final String FICHEIRO_DADOS = "data/achados.dat";
+    private static final Path FICHEIRO = Path.of("data", "base.dat");
 
     public static void main(String[] args) {
-        boolean demo = false;
-        boolean reiniciar = false;
-        for (int i = 0; i < args.length; i++) {
-            if (args[i].equals("--demo")) {
-                demo = true;
-            } else if (args[i].equals("--reiniciar")) {
-                reiniciar = true;
-            }
-        }
-
-        if (demo) {
+        if (args.length > 0 && args[0].equals("demo")) {
             new Demonstracao().executar();
             return;
         }
-
-        BaseDados base = reiniciar ? null : Persistencia.carregar(FICHEIRO_DADOS);
-        boolean primeira = base == null;
-        if (primeira) {
+        BaseDados base = BaseDados.carregar(FICHEIRO);
+        if (base == null) {
             base = new BaseDados();
+            Demonstracao.criarContas(base);
+            System.out.println("Primeira execução: criadas contas de teste (palavra-passe 1234).");
         }
-        Sistema sistema = new Sistema(base, new Relogio(), true);
-        if (primeira) {
-            DadosIniciais.popular(sistema);
-            Persistencia.gravar(base, FICHEIRO_DADOS);
-            System.out.println("Dados iniciais criados. Contas de teste (palavra-passe 1234):");
-            System.out.println("  Estudantes: 20230001, 20230002, 20230003 | Docente: D001");
-            System.out.println("  Funcionários: F001 (Secretaria), F002 (Biblioteca) | Gestor: G001");
-        }
-        new Menus(sistema, new Consola(), FICHEIRO_DADOS).executar();
+        Relogio relogio = new Relogio();
+        new Menus(base, relogio, new RegistoService(base, relogio), new ReclamacaoService(base, relogio),
+                new PrazoService(base, relogio), FICHEIRO).iniciar();
     }
 }
