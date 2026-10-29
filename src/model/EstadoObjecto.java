@@ -1,15 +1,15 @@
 package model;
 
-/** Estados de um objecto e transições permitidas entre eles. */
+/** Fases da vida de um objecto. Só são permitidas as mudanças listadas em podePassarPara. */
 public enum EstadoObjecto {
-    PRE_REGISTADO,
-    DISPONIVEL,
-    RESERVADO,
-    DEVOLVIDO,
-    NAO_RECLAMADO,
-    DESTINO_APROVADO,
-    DESTINO_CUMPRIDO,
-    CANCELADO;
+    PRE_REGISTADO,      // registado no portal, ainda não entregue no sector
+    DISPONIVEL,         // guardado no sector e visível no catálogo
+    RESERVADO,          // alguém reclamou e está a ser verificado
+    DEVOLVIDO,          // entregue ao dono
+    NAO_RECLAMADO,      // passou o prazo de guarda
+    DESTINO_APROVADO,   // o Gestor escolheu o destino final
+    DESTINO_CUMPRIDO,   // destino executado
+    CANCELADO;          // pré-registo expirado ou entrada recusada
 
     public boolean podePassarPara(EstadoObjecto novo) {
         switch (this) {
@@ -24,7 +24,7 @@ public enum EstadoObjecto {
             case DESTINO_APROVADO:
                 return novo == DESTINO_CUMPRIDO;
             default:
-                return false;
+                return false;   // DEVOLVIDO, DESTINO_CUMPRIDO e CANCELADO são finais
         }
     }
 }

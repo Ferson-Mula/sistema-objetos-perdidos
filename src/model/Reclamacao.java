@@ -4,36 +4,37 @@ import java.io.Serializable;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-/** Reclamação de um objecto por quem diz ser o dono (P03). */
+/** Reclamação de um objecto por quem diz ser o dono. */
 public class Reclamacao implements Serializable {
-
-    private static final long serialVersionUID = 1L;
 
     private final int id;
     private final Objecto objecto;
-    private final Procura procura;
+    private final Procura procura;          // a procura do reclamante (pode ser null)
     private final Utilizador reclamante;
-    private final LocalDateTime criadaEm;
 
-    private String respostaDetalhe;
+    private String resposta;                // resposta à pergunta sobre o detalhe oculto
     private String provas;
-    private double pontuacao;
     private EstadoReclamacao estado;
-    private LocalDateTime prazoResposta;
-    private LocalDate prazoLevantamento;
-    private String motivoDecisao;
+    private LocalDateTime prazoResposta;    // até quando pode juntar provas
+    private LocalDate prazoLevantamento;    // até quando pode levantar o objecto
+    private String motivo;                  // motivo da última decisão
     private boolean recursoUsado;
     private int tentativas = 1;
 
-    public Reclamacao(int id, Objecto objecto, Procura procura, Utilizador reclamante, String respostaDetalhe,
-                      String provas, LocalDateTime criadaEm) {
+    public Reclamacao(int id, Objecto objecto, Procura procura, Utilizador reclamante, String resposta,
+                      String provas) {
         this.id = id;
         this.objecto = objecto;
         this.procura = procura;
         this.reclamante = reclamante;
-        this.respostaDetalhe = respostaDetalhe;
+        this.resposta = resposta;
         this.provas = provas;
-        this.criadaEm = criadaEm;
+    }
+
+    /** Uma reclamação está "activa" enquanto ainda pode terminar com a entrega do objecto. */
+    public boolean estaActiva() {
+        return estado == EstadoReclamacao.PROVA_ADICIONAL || estado == EstadoReclamacao.EM_VERIFICACAO
+                || estado == EstadoReclamacao.APROVADA || estado == EstadoReclamacao.EM_RECURSO;
     }
 
     public int getId() {
@@ -52,32 +53,20 @@ public class Reclamacao implements Serializable {
         return reclamante;
     }
 
-    public LocalDateTime getCriadaEm() {
-        return criadaEm;
+    public String getResposta() {
+        return resposta;
     }
 
-    public String getRespostaDetalhe() {
-        return respostaDetalhe;
-    }
-
-    public void setRespostaDetalhe(String r) {
-        this.respostaDetalhe = r;
+    public void setResposta(String resposta) {
+        this.resposta = resposta;
     }
 
     public String getProvas() {
         return provas;
     }
 
-    public void setProvas(String p) {
-        this.provas = p;
-    }
-
-    public double getPontuacao() {
-        return pontuacao;
-    }
-
-    public void setPontuacao(double pontuacao) {
-        this.pontuacao = pontuacao;
+    public void setProvas(String provas) {
+        this.provas = provas;
     }
 
     public EstadoReclamacao getEstado() {
@@ -92,45 +81,44 @@ public class Reclamacao implements Serializable {
         return prazoResposta;
     }
 
-    public void setPrazoResposta(LocalDateTime p) {
-        this.prazoResposta = p;
+    public void setPrazoResposta(LocalDateTime prazoResposta) {
+        this.prazoResposta = prazoResposta;
     }
 
     public LocalDate getPrazoLevantamento() {
         return prazoLevantamento;
     }
 
-    public void setPrazoLevantamento(LocalDate p) {
-        this.prazoLevantamento = p;
+    public void setPrazoLevantamento(LocalDate prazoLevantamento) {
+        this.prazoLevantamento = prazoLevantamento;
     }
 
-    public String getMotivoDecisao() {
-        return motivoDecisao;
+    public String getMotivo() {
+        return motivo;
     }
 
-    public void setMotivoDecisao(String m) {
-        this.motivoDecisao = m;
+    public void setMotivo(String motivo) {
+        this.motivo = motivo;
     }
 
     public boolean isRecursoUsado() {
         return recursoUsado;
     }
 
-    public void setRecursoUsado(boolean r) {
-        this.recursoUsado = r;
+    public void setRecursoUsado(boolean recursoUsado) {
+        this.recursoUsado = recursoUsado;
     }
 
     public int getTentativas() {
         return tentativas;
     }
 
-    public void incrementarTentativas() {
+    public void maisUmaTentativa() {
         tentativas++;
     }
 
     @Override
     public String toString() {
-        return "Reclamação #" + id + " | " + objecto.getCodigo() + " | " + reclamante.getNome() + " | " + estado
-                + " | pontuação " + String.format("%.2f", pontuacao);
+        return "Reclamação #" + id + " | " + objecto.getCodigo() + " | " + reclamante.getNome() + " | " + estado;
     }
 }

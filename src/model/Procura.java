@@ -4,10 +4,10 @@ import java.io.Serializable;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-/** Pedido de procura de um objecto perdido (P02). */
+/** Pedido de quem perdeu um objecto. Fica activo durante 60 dias. */
 public class Procura implements Serializable {
 
-    private static final long serialVersionUID = 1L;
+    public static final int DIAS_VALIDADE = 60;
 
     private final int id;
     private final Utilizador dono;
@@ -17,16 +17,13 @@ public class Procura implements Serializable {
     private final String marca;
     private final Zona localProvavel;
     private final LocalDate perdidoEm;
-    private final String detalheOculto;
-    private final LocalDateTime criadaEm;
     private final LocalDate validaAte;
 
-    private EstadoProcura estado = EstadoProcura.ACTIVA;
+    private boolean activa = true;
     private boolean avisoExpiracaoEnviado;
 
     public Procura(int id, Utilizador dono, Categoria categoria, String descricao, String cor, String marca,
-                   Zona localProvavel, LocalDate perdidoEm, String detalheOculto, LocalDateTime criadaEm,
-                   int diasValidade) {
+                   Zona localProvavel, LocalDate perdidoEm, LocalDateTime criadaEm) {
         this.id = id;
         this.dono = dono;
         this.categoria = categoria;
@@ -35,9 +32,7 @@ public class Procura implements Serializable {
         this.marca = marca;
         this.localProvavel = localProvavel;
         this.perdidoEm = perdidoEm;
-        this.detalheOculto = detalheOculto;
-        this.criadaEm = criadaEm;
-        this.validaAte = criadaEm.toLocalDate().plusDays(diasValidade);
+        this.validaAte = criadaEm.toLocalDate().plusDays(DIAS_VALIDADE);
     }
 
     public int getId() {
@@ -72,36 +67,30 @@ public class Procura implements Serializable {
         return perdidoEm;
     }
 
-    public String getDetalheOculto() {
-        return detalheOculto;
-    }
-
-    public LocalDateTime getCriadaEm() {
-        return criadaEm;
-    }
-
     public LocalDate getValidaAte() {
         return validaAte;
     }
 
-    public EstadoProcura getEstado() {
-        return estado;
+    public boolean isActiva() {
+        return activa;
     }
 
-    public void setEstado(EstadoProcura estado) {
-        this.estado = estado;
+    /** Fecha a procura (objecto devolvido ou prazo terminado). */
+    public void encerrar() {
+        this.activa = false;
     }
 
     public boolean isAvisoExpiracaoEnviado() {
         return avisoExpiracaoEnviado;
     }
 
-    public void setAvisoExpiracaoEnviado(boolean v) {
-        this.avisoExpiracaoEnviado = v;
+    public void setAvisoExpiracaoEnviado(boolean enviado) {
+        this.avisoExpiracaoEnviado = enviado;
     }
 
     @Override
     public String toString() {
-        return "Procura #" + id + " | " + categoria + " | " + descricao + " | " + estado + " | válida até " + validaAte;
+        return "Procura #" + id + " | " + categoria + " | " + descricao + " | "
+                + (activa ? "activa até " + validaAte : "encerrada");
     }
 }

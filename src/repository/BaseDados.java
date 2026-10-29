@@ -1,122 +1,139 @@
 package repository;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
-import model.Notificacao;
 import model.Objecto;
+import model.Perfil;
 import model.Procura;
 import model.Reclamacao;
+import model.RegraNegocioException;
+import model.Sector;
 import model.Utilizador;
 
 /**
- * Todos os dados do sistema em memória (listas). É gravada e carregada
- * por inteiro pela classe Persistencia.
+ * "Base de dados" do sistema: listas em memória que são guardadas num ficheiro.
+ * Todos os serviços usam esta classe para ler e guardar informação.
  */
 public class BaseDados implements Serializable {
 
-    private static final long serialVersionUID = 1L;
+    public final List<Utilizador> utilizadores = new ArrayList<>();
+    public final List<Objecto> objectos = new ArrayList<>();
+    public final List<Procura> procuras = new ArrayList<>();
+    public final List<Reclamacao> reclamacoes = new ArrayList<>();
 
-    private final List<Utilizador> utilizadores = new ArrayList<Utilizador>();
-    private final List<Objecto> objectos = new ArrayList<Objecto>();
-    private final List<Procura> procuras = new ArrayList<Procura>();
-    private final List<Reclamacao> reclamacoes = new ArrayList<Reclamacao>();
-    private final List<Notificacao> notificacoes = new ArrayList<Notificacao>();
-    /** Pares "idProcura:codigoObjecto" já notificados, para não repetir avisos. */
-    private final Set<String> avisosCorrespondencia = new HashSet<String>();
+    private int ultimoObjecto = 0;
+    private int ultimaProcura = 0;
+    private int ultimaReclamacao = 0;
 
-    private int seqUtilizador = 0;
-    private int seqObjecto = 0;
-    private int seqProcura = 0;
-    private int seqReclamacao = 0;
-    private int seqNotificacao = 0;
+    /** Se for verdadeiro, as notificações também aparecem no ecrã (útil na demonstração). */
+    private transient boolean mostrarNotificacoes = false;
 
-    public int proximoIdUtilizador() {
-        return ++seqUtilizador;
+    public void setMostrarNotificacoes(boolean mostrar) {
+        this.mostrarNotificacoes = mostrar;
     }
 
+    // ------------------------------------------------------------ utilizadores
+
+    public Utilizador criarUtilizador(String numero, String nome, String email, String documento, String senha,
+                                      Perfil perfil, Sector sector) {
+        if (utilizador(numero) != null) {
+            throw new RegraNegocioException("Já existe um utilizador com o número " + numero + ".");
+        }
+        if (senha == null || senha.length() < 4) {
+            throw new RegraNegocioException("A palavra-passe deve ter pelo menos 4 caracteres.");
+        }
+        Utilizador u = new Utilizador(numero, nome, email, documento, senha, perfil, sector);
+        utilizadores.add(u);
+        return u;
+    }
+
+    public Utilizador utilizador(String numero) {
+        return utilizadores.stream().filter(u -> u.getNumero().equalsIgnoreCase(numero)).findFirst().orElse(null);
+    }
+
+    /** Devolve o utilizador se o número e a palavra-passe estiverem certos; senão devolve null. */
+    public Utilizador entrar(String numero, String senha) {
+        Utilizador u = utilizador(numero);
+        return (u != null && u.verificarSenha(senha)) ? u : null;
+    }
+
+    // ------------------------------------------------------------ procurar por código ou número
+
+    public Objecto objecto(String codigo) {
+        return objectos.stream().filter(o -> o.getCodigo().equalsIgnoreCase(codigo)).findFirst().orElse(null);
+    }
+
+    public Reclamacao reclamacao(int id) {
+        return reclamacoes.stream().filter(r -> r.getId() == id).findFirst().orElse(null);
+    }
+
+    public Procura procura(int id) {
+        return procuras.stream().filter(p -> p.getId() == id).findFirst().orElse(null);
+    }
+
+    // ------------------------------------------------------------ numeração
+
+    /** Códigos do tipo AP-2026-0001 (RN01). */
     public String proximoCodigoObjecto(int ano) {
-        seqObjecto++;
-        return "OBJ-" + ano + "-" + String.format("%04d", seqObjecto);
+        ultimoObjecto++;
+        return String.format("AP-%d-%04d", ano, ultimoObjecto);
     }
 
     public int proximoIdProcura() {
-        return ++seqProcura;
+        return ++ultimaProcura;
     }
 
     public int proximoIdReclamacao() {
-        return ++seqReclamacao;
+        return ++ultimaReclamacao;
     }
 
-    public int proximoIdNotificacao() {
-        return ++seqNotificacao;
+    // ------------------------------------------------------------ notificações
+
+    /** Guarda a mensagem na caixa do utilizador (num sistema real seria um email ou SMS). */
+    public void avisar(Utilizador u, String assunto, String mensagem) {
+        u.receber(assunto + ": " + mensagem);
+        if (mostrarNotificacoes) {
+            System.out.println("      [aviso para " + u.getNome() + "] " + assunto + " - " + mensagem);
+        }
     }
 
-    public List<Utilizador> getUtilizadores() {
-        return utilizadores;
+    public void avisarFuncionarios(Sector sector, String assunto, String mensagem) {
+        utilizadores.stream().filter(u -> u.ehFuncionarioDe(sector)).forEach(u -> avisar(u, assunto, mensagem));
     }
 
-    public List<Objecto> getObjectos() {
-        return objectos;
+    public void avisarGestores(String assunto, String mensagem) {
+        utilizadores.stream().filter(u -> u.getPerfil() == Perfil.GESTOR).forEach(u -> avisar(u, assunto, mensagem));
     }
 
-    public List<Procura> getProcuras() {
-        return procuras;
+    // ------------------------------------------------------------ ficheiro
+
+    public void guardar(Path ficheiro) {
+        try {
+            Files.createDirectories(ficheiro.getParent());
+            try (ObjectOutputStream out = new ObjectOutputStream(Files.newOutputStream(ficheiro))) {
+                out.writeObject(this);
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Não foi possível guardar os dados: " + e.getMessage());
+        }
     }
 
-    public List<Reclamacao> getReclamacoes() {
-        return reclamacoes;
-    }
-
-    public List<Notificacao> getNotificacoes() {
-        return notificacoes;
-    }
-
-    public Set<String> getAvisosCorrespondencia() {
-        return avisosCorrespondencia;
-    }
-
-    // ---- pesquisas simples (percorrem as listas)
-
-    public Objecto objectoPorCodigo(String codigo) {
-        if (codigo == null) {
+    /** Lê os dados guardados; se o ficheiro não existir devolve null. */
+    public static BaseDados carregar(Path ficheiro) {
+        if (!Files.exists(ficheiro)) {
             return null;
         }
-        for (int i = 0; i < objectos.size(); i++) {
-            if (objectos.get(i).getCodigo().equalsIgnoreCase(codigo.trim())) {
-                return objectos.get(i);
-            }
+        try (ObjectInputStream in = new ObjectInputStream(Files.newInputStream(ficheiro))) {
+            return (BaseDados) in.readObject();
+        } catch (IOException | ClassNotFoundException e) {
+            throw new IllegalStateException("Ficheiro de dados inválido: " + e.getMessage());
         }
-        return null;
-    }
-
-    public Procura procuraPorId(int id) {
-        for (int i = 0; i < procuras.size(); i++) {
-            if (procuras.get(i).getId() == id) {
-                return procuras.get(i);
-            }
-        }
-        return null;
-    }
-
-    public Reclamacao reclamacaoPorId(int id) {
-        for (int i = 0; i < reclamacoes.size(); i++) {
-            if (reclamacoes.get(i).getId() == id) {
-                return reclamacoes.get(i);
-            }
-        }
-        return null;
-    }
-
-    public Utilizador utilizadorPorNumero(String numero) {
-        for (int i = 0; i < utilizadores.size(); i++) {
-            if (utilizadores.get(i).getNumero().equalsIgnoreCase(numero.trim())) {
-                return utilizadores.get(i);
-            }
-        }
-        return null;
     }
 }

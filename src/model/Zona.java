@@ -1,6 +1,6 @@
 package model;
 
-/** Zonas do campus. Zonas do mesmo grupo são consideradas próximas. */
+/** Zonas do campus. Zonas do mesmo grupo são vizinhas. */
 public enum Zona {
     BIBLIOTECA("Biblioteca", 1),
     SECRETARIA("Secretaria", 1),
@@ -21,15 +21,9 @@ public enum Zona {
         this.grupo = grupo;
     }
 
-    /** 1.0 se for a mesma zona, 0.6 se for de zona vizinha, 0 caso contrário. */
-    public double proximidade(Zona outra) {
-        if (this == outra) {
-            return 1.0;
-        }
-        if (this.grupo == outra.grupo && this.grupo != 9) {
-            return 0.6;
-        }
-        return 0;
+    /** Verdadeiro se for a mesma zona ou uma zona vizinha. */
+    public boolean estaPerto(Zona outra) {
+        return this == outra || (grupo == outra.grupo && grupo != 9);
     }
 
     @Override

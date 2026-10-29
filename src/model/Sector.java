@@ -1,6 +1,6 @@
 package model;
 
-/** Sectores que guardam objectos. */
+/** Sectores da universidade que guardam objectos. */
 public enum Sector {
     SECRETARIA("Secretaria"),
     BIBLIOTECA("Biblioteca");
